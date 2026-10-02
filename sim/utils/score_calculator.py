@@ -348,7 +348,7 @@ class ScoreCalculator:
         checks = [
             np.all(np.abs(kinematics['lat_accel']) <=
                    boundaries['max_abs_lat_accel']),
-            np.all(kinematics['lon_accel'] <= boundaries['max_abs_lat_accel']),
+            np.all(kinematics['lon_accel'] <= boundaries['max_lon_accel']),
             np.all(kinematics['lon_accel'] >= boundaries['min_lon_accel']),
             np.all(np.abs(kinematics['lon_jerk']) <=
                    boundaries['max_abs_lon_jerk']),
