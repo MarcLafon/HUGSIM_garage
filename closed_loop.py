@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 sys.path.append(os.getcwd())
 
 import gymnasium
@@ -73,7 +74,7 @@ def create_gym_env(cfg, output):
         with open(plan_pipe, "rb") as pipe:
             plan_traj = pickle.loads(pipe.read())
         # An AD side may also move the ego itself: a dict carrying the plan (still what is
-        # scored) plus the displacement to apply this step. Pictura does this to drive with its
+        # scored) plus the displacement to apply this step. an AD side does this to drive with its
         # own vehicle model instead of through the iLQR tracker. A bare array is a plan to track.
         override = None
         if isinstance(plan_traj, dict):
@@ -146,6 +147,44 @@ def create_gym_env(cfg, output):
         json.dump(results, f)
 
 
+
+#: What each variable the sim configs interpolate is for, shown when one is missing.
+ENV_VARS = {
+    "HUGSIM_DATA": "the installed data tree (HUGSIM-public / HUGSIM-private)",
+    "HUGSIM_OUT": "where episode folders are written (or pass --output_dir)",
+    "NUSCENES_RAW": "the raw nuScenes release, read only by scenarios with load_HD_map: true",
+}
+
+ENV_REF = re.compile(r"\$\{oc\.env:([A-Z0-9_]+)\}")
+
+
+def check_env(base_cfg, keys):
+    """Report, in one message, every unset variable the keys this run reads interpolate.
+
+    The configs hold no absolute paths, so each root arrives from the environment, and each
+    agent names its own variable because the agents live in unrelated checkouts. Only the keys
+    a run actually reads are required, so running one agent does not need the others' paths.
+    Left to OmegaConf these surface one at a time, inside a traceback that names neither the
+    variable nor what it is for.
+    """
+    raw = OmegaConf.to_container(base_cfg, resolve=False)
+    missing = {}
+    for key in keys:
+        node = raw
+        for part in key.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        for var in ENV_REF.findall(str(node or "")):
+            if var not in os.environ:
+                missing.setdefault(var, []).append(key)
+    if missing:
+        rows = "\n".join(
+            f"  {v:20s} {ENV_VARS.get(v, 'the launcher for --ad ' + v.removeprefix('HUGSIM_AD_').lower())}"
+            f"   (needed by {', '.join(k)})"
+            for v, k in sorted(missing.items())
+        )
+        raise SystemExit(f"these environment variables are not set:\n{rows}")
+
+
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
@@ -164,9 +203,9 @@ if __name__ == "__main__":
         help="Overrides base.output_dir. The agent name is still appended, as it is for the "
              "config value, so the episode folder is named the same way either way.")
     parser.add_argument(
-        '--pictura_obs', default=None, choices=('true', 'false'),
-        help="Force the abstract scene export on or off. The default is on for the agents that "
-             "read it (pictura, alberti_photo) and off otherwise.")
+        '--scene_export', default=None, choices=('true', 'false'),
+        help="Force the abstract scene export on or off. It is off unless the agent asks for it "
+             "with base.<ad>_scene_export: true, since building it is not free.")
     args = parser.parse_args()
 
     scenario_config = OmegaConf.load(args.scenario_path)
@@ -179,14 +218,23 @@ if __name__ == "__main__":
         {"camera": camera_config},
         {"kinematic": kinematic_config}
     )
+    ad_key = 'dynamo_path' if args.ad.startswith('dynamo') else f'{args.ad}_path'
+    needed = ['realcar_path', 'model_base']
+    if args.output_dir is None:
+        needed.append('output_dir')
+    if args.ad_path is None and ad_key in cfg.base:
+        needed.append(ad_key)
+    if scenario_config.get('load_HD_map', False):
+        needed.append('HD_map.path')
+    check_env(cfg.base, needed)
+
     cfg.base.output_dir = (args.output_dir or cfg.base.output_dir) + args.ad
-    # Pictura drives from an abstract render of the scene rather than the Gaussian one, so
-    # the env has to export the map and the boxes as geometry. Nothing else reads it, and
-    # building the map is not free, so it is switched on by the agent rather than by config.
-    # alberti_photo drives from HUGSIM's render but still needs the route out of this export.
-    cfg.base.pictura_obs = (
-        args.pictura_obs == 'true' if args.pictura_obs is not None
-        else args.ad in ('pictura', 'alberti_photo')
+    # Some AD sides read an abstract render of the scene rather than the Gaussian one, and need
+    # the map and the boxes exported as geometry. Building it is not free and nothing else reads
+    # it, so an agent opts in with base.<ad>_scene_export: true, or --scene_export overrides.
+    cfg.base.scene_export_obs = (
+        args.scene_export == 'true' if args.scene_export is not None
+        else bool(cfg.base.get(f'{args.ad}_scene_export', False))
     )
 
     model_path = os.path.join(cfg.base.model_base, cfg.scenario.scene_name)
@@ -201,12 +249,15 @@ if __name__ == "__main__":
     if args.ad_path is not None:
         ad_path = args.ad_path
     else:
-        key = 'dynamo_path' if args.ad.startswith('dynamo') else f'{args.ad}_path'
-        if key not in cfg.base:
+        env_var = f"HUGSIM_AD_{args.ad.upper()}"
+        if ad_key in cfg.base:
+            ad_path = cfg.base[ad_key]
+        elif env_var in os.environ:
+            ad_path = os.environ[env_var]          # an agent the shipped config does not list
+        else:
             raise SystemExit(
-                f"no launcher for --ad {args.ad}: set base.{key} in the base config, or pass "
-                f"--ad_path. Known: {sorted(k for k in cfg.base if k.endswith('_path'))}")
-        ad_path = cfg.base[key]
+                f"no launcher for --ad {args.ad}: pass --ad_path, export {env_var}, or add "
+                f"base.{ad_key}. Listed: {sorted(k for k in cfg.base if k.endswith('_path'))}")
 
     process = launch(ad_path, args.ad_cuda, output)
     try:
