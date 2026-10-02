@@ -1,6 +1,11 @@
-realcar_path: /nas/users/hyzhou/PAMI2024/release/3DRealCar
-model_base: /nas/users/hyzhou/PAMI2024/release/ss/scenes/waymo
-uniad_path: /nas/users/hyzhou/code/UniAD_Sim/tools/e2e.sh
-vad_path: /nas/users/hyzhou/code/VAD_Sim/tools/e2e.sh
-ltf_path: /nas/users/hyzhou/code/navsim/ltf_e2e.sh
-output_dir: /nas/users/hyzhou/PAMI2024/release/outputs/benchmark/out/waymo_
+realcar_path: ${oc.env:HUGSIM_DATA}/HUGSIM-public/3DRealCar
+model_base: ${oc.env:HUGSIM_DATA}/HUGSIM-public/ss/scenes/waymo
+uniad_path: ${oc.env:HUGSIM_AD_UNIAD}
+vad_path: ${oc.env:HUGSIM_AD_VAD}
+ltf_path: ${oc.env:HUGSIM_AD_LTF}
+dynamo_path: ${oc.env:HUGSIM_AD_DYNAMO}
+gtrs_path: ${oc.env:HUGSIM_AD_GTRS}
+ztrs_path: ${oc.env:HUGSIM_AD_ZTRS}
+gtrs_aug_path: ${oc.env:HUGSIM_AD_GTRS_AUG}
+pictura_path: ${oc.env:HUGSIM_AD_PICTURA}
+output_dir: ${oc.env:HUGSIM_OUT}/waymo_
