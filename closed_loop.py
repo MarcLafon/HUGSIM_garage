@@ -72,6 +72,13 @@ def create_gym_env(cfg, output):
             pipe.write(pickle.dumps((obs, info)))
         with open(plan_pipe, "rb") as pipe:
             plan_traj = pickle.loads(pipe.read())
+        # An AD side may also move the ego itself: a dict carrying the plan (still what is
+        # scored) plus the displacement to apply this step. Pictura does this to drive with its
+        # own vehicle model instead of through the iLQR tracker. A bare array is a plan to track.
+        override = None
+        if isinstance(plan_traj, dict):
+            override = plan_traj
+            plan_traj = override['plan']
 
         if plan_traj is not None:
             # The plan is expressed in the ego frame at the *current* pose, so it has to be
@@ -94,12 +101,21 @@ def create_gym_env(cfg, output):
 
             # The command is held for exactly one simulator step, so the tracker must be
             # discretized at cfg.kinematic.dt rather than at the AD's waypoint spacing.
-            acc, steer_rate = traj2control(
-                plan_traj, info, plan_dt=PLAN_TIMESTEP, sim_dt=cfg.kinematic.dt
-            )
-            # print(plan_traj, acc, steer_rate)
+            if override is not None:
+                action = {
+                    'acc': override['acc'],
+                    'steer_rate': 0.0,
+                    'pose_delta': override['pose_delta'],
+                    'velo': override['velo'],
+                    'steer': override['steer'],
+                }
+            else:
+                acc, steer_rate = traj2control(
+                    plan_traj, info, plan_dt=PLAN_TIMESTEP, sim_dt=cfg.kinematic.dt
+                )
+                # print(plan_traj, acc, steer_rate)
 
-            action = {'acc': acc, 'steer_rate': steer_rate}
+                action = {'acc': acc, 'steer_rate': steer_rate}
             obs, reward, terminated, truncated, info = env.step(action)
             cnt += 1
             done = terminated or truncated or cnt > 400
@@ -139,6 +155,18 @@ if __name__ == "__main__":
     parser.add_argument("--kinematic_path", type=str, required=True)
     parser.add_argument('--ad', default="uniad")
     parser.add_argument('--ad_cuda', default="1")
+    parser.add_argument(
+        '--ad_path', default=None,
+        help="Launcher for the AD side, overriding base.<ad>_path. With this, running a new "
+             "agent or a variant of one needs no config file and no code change here.")
+    parser.add_argument(
+        '--output_dir', default=None,
+        help="Overrides base.output_dir. The agent name is still appended, as it is for the "
+             "config value, so the episode folder is named the same way either way.")
+    parser.add_argument(
+        '--pictura_obs', default=None, choices=('true', 'false'),
+        help="Force the abstract scene export on or off. The default is on for the agents that "
+             "read it (pictura, alberti_photo) and off otherwise.")
     args = parser.parse_args()
 
     scenario_config = OmegaConf.load(args.scenario_path)
@@ -151,7 +179,15 @@ if __name__ == "__main__":
         {"camera": camera_config},
         {"kinematic": kinematic_config}
     )
-    cfg.base.output_dir = cfg.base.output_dir + args.ad
+    cfg.base.output_dir = (args.output_dir or cfg.base.output_dir) + args.ad
+    # Pictura drives from an abstract render of the scene rather than the Gaussian one, so
+    # the env has to export the map and the boxes as geometry. Nothing else reads it, and
+    # building the map is not free, so it is switched on by the agent rather than by config.
+    # alberti_photo drives from HUGSIM's render but still needs the route out of this export.
+    cfg.base.pictura_obs = (
+        args.pictura_obs == 'true' if args.pictura_obs is not None
+        else args.ad in ('pictura', 'alberti_photo')
+    )
 
     model_path = os.path.join(cfg.base.model_base, cfg.scenario.scene_name)
     model_config = OmegaConf.load(os.path.join(model_path, 'cfg.yaml'))
@@ -161,23 +197,17 @@ if __name__ == "__main__":
     output = os.path.join(cfg.base.output_dir, cfg.scenario.scene_name+"_"+cfg.scenario.mode)
     os.makedirs(output, exist_ok=True)
 
-    if args.ad == 'uniad':
-        ad_path = cfg.base.uniad_path
-    elif args.ad == 'vad':
-        ad_path = cfg.base.vad_path
-    elif args.ad == 'ltf':
-        ad_path = cfg.base.ltf_path
-    elif args.ad.startswith('dynamo'):
-        ad_path = cfg.base.dynamo_path
-    elif args.ad == 'gtrs':
-        ad_path = cfg.base.gtrs_path
-    elif args.ad == 'ztrs':
-        ad_path = cfg.base.ztrs_path
-    elif args.ad == 'gtrs_aug':
-        ad_path = cfg.base.gtrs_aug_path
+    # base.<ad>_path by convention, or --ad_path. 'dynamo*' variants share one launcher.
+    if args.ad_path is not None:
+        ad_path = args.ad_path
     else:
-        raise NotImplementedError
-    
+        key = 'dynamo_path' if args.ad.startswith('dynamo') else f'{args.ad}_path'
+        if key not in cfg.base:
+            raise SystemExit(
+                f"no launcher for --ad {args.ad}: set base.{key} in the base config, or pass "
+                f"--ad_path. Known: {sorted(k for k in cfg.base if k.endswith('_path'))}")
+        ad_path = cfg.base[key]
+
     process = launch(ad_path, args.ad_cuda, output)
     try:
         create_gym_env(cfg, output)
