@@ -1,39 +1,10 @@
-<a id="readme-top"></a>
+# HUGSIM garage
 
-<!-- PROJECT LOGO -->
-<div align="center">
-  <img src="assets/hugsim.png" alt="Logo" width="300">
-  
-  <p>
-    <a href="https://xdimlab.github.io/HUGSIM/">
-      <img src="https://img.shields.io/badge/Project-Page-green?style=for-the-badge" alt="Project Page" height="20">
-    </a>
-    <a href="https://arxiv.org/abs/2412.01718">
-      <img src="https://img.shields.io/badge/arXiv-Paper-red?style=for-the-badge" alt="arXiv Paper" height="20">
-    </a>
-  </p>
-  
-  > Hongyu Zhou<sup>1</sup>, Longzhong Lin<sup>1</sup>, Jiabao Wang<sup>1</sup>, Yichong Lu<sup>1</sup>, Dongfeng Bai<sup>2</sup>, Bingbing Liu<sup>2</sup>, Yue Wang<sup>1</sup>, Andreas Geiger<sup>3,4</sup>, Yiyi Liao<sup>1,†</sup> <br>
-  > <sup>1</sup> Zhejiang University <sup>2</sup> Huawei <sup>3</sup> University of Tübingen <sup>4</sup> Tübingen AI Center <br>
-  > <sup>†</sup> Corresponding Authors
+A maintained fork of [HUGSIM](https://github.com/hyzhou404/HUGSIM) and a home for the baseline
+agents that drive in it. The simulator and the data are Zhou et al.'s work ([paper](https://arxiv.org/abs/2412.01718),
+[project page](https://xdimlab.github.io/HUGSIM/)); please cite them, see [Citation](#citation).
 
-  <img src="assets/teaser.jpg" width="800" style="display: block; margin: 0 auto;">
-
-  <br>
-
-  <p align="left">
-    This is the official project repository of the paper <b>HUGSIM: A Real-Time, Photo-Realistic and Closed-Loop Simulator for Autonomous Driving</b>.
-  </p>
-  
-</div>
-
----
-
-# About this fork
-
-This is **HUGSIM_garage**, a fork of [hyzhou404/HUGSIM](https://github.com/hyzhou404/HUGSIM)
-maintained by [valeoai](https://github.com/valeoai). The simulator, the paper and the data are
-the original authors' work, cited at the bottom; this fork exists for two reasons.
+# Why this fork
 
 **A place to keep the fixes.** Upstream's last change is from 2025-11-08, and a correctness fix
 we opened four days later is still open. Rather than carry fixes as patches in every project
